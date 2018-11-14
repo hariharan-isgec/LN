@@ -1,0 +1,637 @@
+|******************************************************************************
+|* tpisg2120m000  0  VRC B61U a7 isg 
+|* Maintain Project Activity Master
+|* merino1                       
+|* 2018-02-07
+|******************************************************************************
+|* Main table tpisg220 Project Activity Master, Form Type 1
+|******************************************************************************
+|* ID: ISGECMOD011, Gokul Chaurasia, 07-02-2018, VRC B61U a7 isg
+|* New Devlopment
+|* ID: ISGEC01100, Sahil Sharma, 22-08-2018, VRC B61U a7 isg
+|* Data check added if session opens from the specific of tpisg2539m000
+|****************************** declaration section ***************************
+declaration:
+
+	table	ttpisg220 | Project Activity Master
+	table	ttpisg200 | Product Wise Activity Master
+	table	ttpisg219 | Project Wise Leadtime Basis
+	table	ttpisg222 | Product Activity Baseline Schedule
+	table	ttpisg221
+	table	ttpisg241
+	table	ttpisg240
+	table	ttpisg216
+	table	tdmisg140
+	
+	|---------------------- Form Variables ---------------------------------
+	
+	extern	domain	tcdsca		cprj.dsca
+	extern	domain	tcdsca		cact.dsca
+	extern	domain	tcqiv1		val.basis, ovr.act, ovr.pln
+	extern	domain	tfgld.date	outlook.end
+	extern	domain	tfgld.date	base.end, base.strt, chk.date	
+	extern	domain	tfgld.date	con.date, condate.ini, exp.comdate
+	extern	domain	tcmcs.long	base.dura
+	
+	|---------------------- Script Variables --------------------------------
+	
+	extern	domain	tccprj		i.cprj, t.cprj, f.cprj
+	extern	domain	tcorno		i.pcod, i.acty, t.pcod, f.sitm, t.acty
+	extern	domain	tcmcs.str30	t.cact, t.pact, var.cact
+	extern	domain	tcmcs.str50	f.bohd
+	extern	domain	tcmcs.s200u	i.iref, t.iref, f.iref
+	extern	domain	tcmcs.long	o.base, pact.len
+	extern	domain	tcsess		sess.code
+	extern	domain	tfgld.date	curr.date
+	extern	domain	tcpono		drwg.attach, drwg.release	|#ISGECMOD035.sn
+		domain	tcdate		i.acdt
+		domain	tpcalender.typ	calendar.type			|#ISGECMOD035.en
+	long ret, flag, a
+	string 				query(500)
+	
+#include<bic_dam>
+|****************************** program section ********************************
+before.program:										|#ISGEC01100.sn
+	i.cprj = ""
+	i.pcod = ""
+	i.acty = "PARENT"
+	import("prog.name$", sess.code)
+	
+	if sess.code = "tpisg2539m000" then									
+		import("tpisg239.cprj", i.cprj)
+		import("tpisg239.pcod", i.pcod)
+		import("tpisg239.iref", i.iref)
+		
+		tpisg220.cprj = i.cprj
+		tpisg220.pcod = i.pcod
+| 		query.extension = "tpisg220.pcod = "&quoted.string(i.pcod)&" and tpisg220.sub1 = "&quoted.string(i.iref)&" and tpisg220.acty = "&quoted.string(i.acty)
+|		query.extension = "tpisg220.cprj = "&quoted.string(i.cprj)&"and tpisg220.pcod = "&quoted.string(i.pcod)&"and tpisg220.sub1 = "&quoted.string(i.iref)&" and tpisg220.acty = "&quoted.string(i.acty)
+		
+		domain tcmcs.int min.outl
+		min.outl=0
+		select min(outl):min.outl from tpisg220 where cprj = :i.cprj and pcod = :i.pcod and sub1 = :i.iref
+		selectdo endselect
+		query.extension = "tpisg220.cprj = "&quoted.string(i.cprj)&"and tpisg220.pcod = "&quoted.string(i.pcod)&"and tpisg220.sub1 = "&quoted.string(i.iref)&" and tpisg220.outl <= "&str$(min.outl + 1)
+		a = 0
+	endif
+
+	curr.date = date.num()
+												
+after.form.read:
+	enable.save.on.occ.change()
+
+choice.control.tower:
+on.choice:
+	start.synchronized.child("tpisg2145m000",
+					  "tpisg220.cprj","tpisg245.cprj"
+					  )
+
+choice.delete.all.act:
+on.choice:
+	if ask.enum("tpisg2200m2002", tcyesno.no) = tcyesno.yes then
+		t.cprj = tpisg220.cprj
+		t.pcod = tpisg220.pcod
+		t.cact = tpisg220.cact
+		t.pact = tpisg220.pact
+		t.iref = tpisg220.sub1
+		t.acty = tpisg220.acty								|#Atul.14.11.2018.n
+		
+		insert.history()
+| 		delete.predecessors.activity(t.cprj,t.pcod,t.cact,t.pact, t.iref)		|#Atul.14.11.2018.o
+		delete.predecessors.activity(t.cprj,t.pcod,t.cact,t.pact, t.iref, t.acty)	|#Atul.14.11.2018.n
+	endif
+	
+after.choice:
+	renumber.in.220(t.cprj,t.pcod)
+	
+	
+| choice.update.progress:										
+| on.choice:
+| 	select	b_tpisg220.cprj:f.cprj,
+| 		b_tpisg220.bohd:f.bohd,
+| 		b_tpisg220.sitm:f.sitm,
+| 		b_tpisg220.sub1:f.iref
+| 	from	tpisg220	b_tpisg220
+| 	where	b_tpisg220._index1 = {:tpisg220.cprj}
+| 	and	(b_tpisg220.bohd = "CT_INSPECTIONCALLRAISED" or	b_tpisg220.bohd = "CT_ISSUEPO"
+|  	or	b_tpisg220.bohd = "CT_FIRSTADVANCERELEASE" or b_tpisg220.bohd = "CT_RESTADVANCERELEASE"
+|  	or	b_tpisg220.bohd = "CT_FINALMICN" or b_tpisg220.bohd = "CT_VEHICLEREQUESTRAISED"
+|  	or	b_tpisg220.bohd = "CT_VEHICLEPLACED" or b_tpisg220.bohd = "CT_MATERIALDISPATCHED" )
+| 	and	b_tpisg220.sub1 = "REFRACTRORY MATERIAL"
+| 	and	b_tpisg220.sub1 = "INTEGRAL PIPING WITH FIXED ORIFICE ATTEMPERATOR"
+| 	selectdo 
+| 		if (trim$(f.bohd) = "CT_INSPECTIONCALLRAISED") or (trim$(f.bohd) = "CT_FINALMICN") or
+| 			(trim$(f.bohd) = "CT_VEHICLEREQUESTRAISED") or (trim$(f.bohd) = "CT_VEHICLEPLACED") or 
+| 			(trim$(f.bohd) = "CT_MATERIALDISPATCHED")	then
+
+| 			update.inspectionid.and.vehicle.placement.progress.in.220(
+| 										f.cprj,
+| 										f.bohd,
+| 										f.sitm,
+| 										f.iref
+| 										)
+| 		endif
+|     								
+| 		if trim$(f.bohd) = "CT_ISSUEPO" then	
+| 			update.poissue.in.220(
+| 						f.cprj,
+| 						f.sitm
+| 						)
+| 		endif
+| 		
+| 		if trim$(f.bohd)="CT_FIRSTADVANCERELEASE" then
+| 			update.pmdl.through.advance(f.cprj,f.iref,f.bohd)
+| 			update.project.activity.master.through.firstadvance(f.cprj,f.iref,f.bohd)
+| 		endif
+
+| 		if trim$(f.bohd)="CT_RESTADVANCERELEASE" then
+| 			update.pmdl.through.advance(f.cprj,f.iref,f.bohd)
+| 			update.project.activity.master.through.restadvance(f.cprj,f.iref,f.bohd)
+| 		endif
+| 	endselect
+	
+												|#ISGEC01100.en
+|****************************** group section ***********************************
+group.2:										|#Anadi.sn
+init.group:
+	ret = create.extra.toolbar(
+		"dmisg1235m000",	"dmisg:notes")					|#Anadi.en
+
+|****************************** choice section **********************************
+
+choice.copy_baseline:
+before.choice:
+	if ask.enum("tpisg2120m0001",tcyesno.no) = tcyesno.no	then
+		choice.again()
+	endif
+
+on.choice:
+	create.baseline.for.activity(tpisg220.cprj,
+				     tpisg220.pcod,
+				     tpisg220.schd)
+
+| choice.open_baseline:
+| on.choice:
+| 	get.activity.baseline(tpisg220.cprj,
+| 			      tpisg220.pcod,
+| 			      tpisg220.schd,
+| 			      o.base)
+	choice.revision_wise:
+	on.choice:
+		start.synchronized.child("tpisg2522m000",
+					  "tpisg220.cprj","tpisg222.cprj",
+					  "tpisg220.pcod","tpisg222.pcod",
+					  "tpisg220.cact","tpisg222.cact"
+					  )
+
+|****************************** field section ***********************************
+
+field.tpisg220.cact:
+before.zoom:
+	tpisg200.cprd = tpisg220.pcod
+
+field.cact.dsca:
+before.display:
+	select	tpisg200.desc:cact.dsca
+	from	tpisg200
+	where	tpisg200._index1 = {:tpisg220.pcod,
+				    :tpisg220.cact}
+	selectdo
+	selectempty
+		cact.dsca = ""
+	endselect
+
+field.cprj.dsca:
+before.display:
+	select	tcmcs052.dsca:cprj.dsca
+	from	tcmcs052
+	where	tcmcs052._index1 = {:tpisg220.cprj}
+	selectdo
+	selectempty
+		cprj.dsca = ""
+	endselect
+
+field.tpisg220.pact:
+before.zoom:
+	tpisg220.cprj = tpisg220.cprj
+	tpisg220.pcod = tpisg220.pcod
+	tpisg220.schd = tpisg220.schd
+
+field.tpisg220.bcod:
+before.zoom:
+	tpisg219.cprj = tpisg220.cprj
+	tpisg219.pcod = tpisg220.pcod
+
+field.val.basis:
+before.display:
+| 	select	tpisg219.valu:val.basis						|#Anadi.so
+	select	tpisg219.bval:val.basis						|#Anadi.sn
+	from	tpisg219
+	where	tpisg219._index1 = {:tpisg220.cprj,
+				    :tpisg220.pcod,
+				    :tpisg220.bcod}
+	selectdo
+	selectempty
+		val.basis = 0
+	endselect								|#Anadi.en
+	
+field.base.strt:
+before.display:
+	base.strt = 0
+	chk.date = date.to.num(2000,01,01)
+	
+	select min(tpisg220.sdst):base.strt
+	from	tpisg220
+	where	tpisg220._index1 = {:tpisg220.cprj, tpisg220.pcod}
+	selectdo
+	endselect
+	
+	if (base.strt < chk.date) then
+		base.strt = 0
+	endif
+
+field.base.end:
+before.display:
+	base.end = 0
+	chk.date = date.to.num(2000,01,01)
+	
+	select max(tpisg220.sdfn):base.end
+	from	tpisg220
+	where	tpisg220._index1 = {:tpisg220.cprj, tpisg220.pcod}
+	selectdo
+	endselect
+	
+	if (base.end < chk.date) then
+		base.end = 0
+	endif
+
+field.ovr.pln:
+before.display:
+	ovr.pln = 0
+	ovr.act = 0
+	select	tpisg216.prop:ovr.pln,
+		tpisg216.proa:ovr.act
+	from	tpisg216
+	where	tpisg216._index1 = {:tpisg220.cprj, :curr.date}
+	selectdo
+	endselect
+	
+field.outlook.end:
+before.display:
+	outlook.end = 0
+	chk.date = date.to.num(2000,01,01)
+	
+	select max(tpisg220.oted):outlook.end
+	from	tpisg220
+	where	tpisg220._index1 = {:tpisg220.cprj, tpisg220.pcod}
+	selectdo
+	endselect
+
+	if (outlook.end < chk.date) then
+		outlook.end = 0
+	endif
+
+field.base.dura:
+before.display:
+	base.dura = 0
+	
+	chk.date = date.to.num(2000,01,01)
+								|#ISGECMOD035.sn
+	select	atpisg245.ctyp:calendar.type	
+	from	tpisg245 atpisg245
+	where	atpisg245._index1 = {:tpisg220.cprj}
+	selectdo
+	selectempty
+		calendar.type = empty	
+	endselect
+								|#ISGECMOD035.en
+								
+	if  (base.end > chk.date) and (base.strt > chk.date) then
+| 		base.dura = base.end - base.strt - GetNonWorkingDays(base.strt, base.end, "fivedays") + 1	|#ISGECMOD035.o
+		base.dura = base.end - base.strt - GetNonWorkingDays(base.strt, base.end, calendar.type) + 1	|#ISGECMOD035.n
+	endif
+	
+| field.outlook.dura:
+| before.display:
+| 	outlook.dura = 0
+| 	
+| 	chk.date = date.to.num(2000,01,01)
+| 	
+| 	if  (outlook.end > chk.date) and (outlook.strt > chk.date) then
+| 		outlook.dura = outlook.end - outlook.strt - GetNonWorkingDays(outlook.strt, outlook.end, "fivedays") + 1
+| 	endif
+| 	
+field.con.date:
+before.display:
+	con.date = 0
+	condate.ini = 0
+	exp.comdate = 0
+	chk.date = date.to.num(2000,01,01)
+	
+	select	tpisg245.ccdt:con.date,
+		tpisg245.cdis:condate.ini,
+		tpisg245.ecdt:exp.comdate,
+		tpisg245.ctyp:calendar.type		
+	from	tpisg245
+	where	tpisg245._index1 = {:tpisg220.cprj}
+	selectdo
+	endselect
+	
+	if con.date < chk.date then
+		con.date = 0
+	endif
+	
+	if condate.ini < chk.date then
+		condate.ini = 0
+	endif
+	
+	if exp.comdate < chk.date then
+		exp.comdate = 0
+	endif
+	
+								|#ISGECMOD035.sn
+field.drwg.attach:
+before.display:
+	drwg.attach = 0
+	if trim$(tpisg220.bohd) = "CT_DOCUMENTAPPROVED" then	
+		select	count(*):drwg.attach
+		from	dmisg140
+		where	dmisg140._index2 = {:tpisg220.cprj}
+		and	((dmisg140.iref = :tpisg220.sub1)
+		or	(dmisg140.iref = :tpisg220.cact))
+		selectdo
+		selectempty
+			drwg.attach = 0
+		endselect
+	endif
+	
+field.drwg.release:
+before.display:
+	i.acdt = date.to.utc(2000,01,01,00,00,00)
+	drwg.release = 0
+	if trim$(tpisg220.bohd) = "CT_DOCUMENTAPPROVED" then	
+		select	count(*):drwg.release
+		from	dmisg140
+		where	dmisg140._index2 = {:tpisg220.cprj}
+		and	((dmisg140.iref = :tpisg220.sub1)
+		or	(dmisg140.iref = :tpisg220.cact))
+		and	dmisg140.acdt > :i.acdt
+		selectdo
+		selectempty
+			drwg.release = 0
+		endselect
+	endif
+								
+								|#ISGECMOD035.en	
+|********************************* Function Section ******************************
+
+functions:
+
+function create.baseline.for.activity(
+		domain	tccprj		i.cprj,
+		domain	tcorno		i.pcod,
+		domain	tcyesno		i.schd)
+{
+	get.activity.baseline(i.cprj,i.pcod,i.schd,o.base)
+	
+	o.base = o.base + 1
+	
+	select	tpisg220.*
+	from	tpisg220
+	where	tpisg220._index1 = {:i.cprj,
+				    :i.pcod
+				    }
+	and	tpisg220.schd =  :i.schd
+	selectdo
+		tpisg222.cprj = tpisg220.cprj
+| 		tpisg222.base = o.base
+		tpisg222.pcod = tpisg220.pcod
+		tpisg222.schd = tpisg220.schd
+		tpisg222.cact = tpisg220.cact
+		tpisg222.actp = tpisg220.actp
+		tpisg222.pact = tpisg220.pact
+		tpisg222.bcod = tpisg220.bcod
+		tpisg222.dura = tpisg220.dura
+		tpisg222.sdst = tpisg220.sdst
+		tpisg222.sdfn = tpisg220.sdfn
+		tpisg222.acsd = tpisg220.acsd
+		tpisg222.acfn = tpisg220.acfn
+		db.insert(ttpisg222,db.skip.dupl,e)
+		commit.transaction()
+	endselect
+	
+	if e = 0	then
+		message("Baseline No. %d has been generated for Project %s",
+			o.base,i.cprj)
+	endif
+}
+
+function get.activity.baseline(
+		domain	tccprj		i.cprj,
+		domain	tcorno		i.pcod,
+		domain	tcyesno		i.schd,
+	ref	domain	tcmcs.long	o.base)
+{
+	o.base = 0
+
+| 	select	tpisg222.base:o.base
+| 	from	tpisg222
+| 	where	tpisg222._index1 = {:i.cprj}
+| 	and	tpisg222.pcod = :i.pcod
+| 	and	tpisg222.schd = :i.schd
+| 	order by tpisg222.base desc
+| 	as set with 1 rows
+| 	selectdo
+| 	selectempty
+| 	endselect
+}
+
+function insert.history()
+{
+	flag = 0
+
+	insert.into.history(t.cprj,t.pcod,t.cact,t.pact)
+}
+
+function insert.into.history(	domain	tccprj		i.cprj,
+				domain	tcorno		i.pcod,
+				domain	tcmcs.str30	i.cact,
+				domain	tcmcs.str30	i.pact)
+{
+	insert.into.tpisg240(i.cprj,i.pcod, i.cact,i.pact)
+	insert.into.tpisg241(i.cprj,i.pcod, i.cact,i.pact)
+}
+
+function insert.into.tpisg240(	domain	tccprj		cprj240,
+				domain	tcorno		pcod240,
+				domain	tcmcs.str30	cact240,
+				domain	tcmcs.str30	pact240)
+{
+	select	tpisg220.*
+	from	tpisg220 
+	where	tpisg220._index1 = {:cprj240,:pcod240}
+	selectdo
+		select	tpisg240.*
+		from	tpisg240
+		where	tpisg240._index1 = {:cprj240,:pcod240,:cact240}
+		selectdo
+		selectempty
+			tpisg240.cprj = tpisg220.cprj		
+			tpisg240.pcod = tpisg220.pcod
+			tpisg240.schd = tpisg220.schd
+			tpisg240.cact = tpisg220.cact
+			tpisg240.pact = tpisg220.pact
+			tpisg240.actp = tpisg220.actp
+			tpisg240.bcod = tpisg220.bcod
+			tpisg240.dura = tpisg220.dura
+			tpisg240.sdst = tpisg220.sdst
+			tpisg240.sdfn = tpisg220.sdfn
+			tpisg240.acsd = tpisg220.acsd
+			tpisg240.acfn = tpisg220.acfn
+			tpisg240.bohd = tpisg220.bohd
+			tpisg240.pred = tpisg220.pred
+			tpisg240.succ = tpisg220.succ
+			tpisg240.desc = tpisg220.desc
+			tpisg240.acty = tpisg220.acty
+			tpisg240.dept = tpisg220.dept
+			tpisg240.vali = tpisg220.vali
+			tpisg240.outl = tpisg220.outl
+			tpisg240.sub1 = tpisg220.sub1
+			tpisg240.sub2 = tpisg220.sub2
+			tpisg240.sub3 = tpisg220.sub3
+			tpisg240.sub4 = tpisg220.sub4
+			tpisg240.amod = tpisg220.amod
+			tpisg240.pcbs = tpisg220.pcbs
+			tpisg240.exdo = tpisg220.exdo
+			tpisg240.cpgv = tpisg220.cpgv
+			tpisg240.otsd = tpisg220.otsd
+			tpisg240.oted = tpisg220.oted
+			tpisg240.rmks = tpisg220.rmks
+			tpisg240.gps1 = tpisg220.gps1
+			tpisg240.gps2 = tpisg220.gps2
+			tpisg240.gps3 = tpisg220.gps3
+			tpisg240.gps4 = tpisg220.gps4
+			tpisg240.pper = tpisg220.pper
+			tpisg240.valu = tpisg220.valu
+			tpisg240.sele = tpisg220.sele
+			tpisg240.user = logname$
+			tpisg240.deld = utc.num()
+			db.insert(ttpisg240, db.skip.dupl, e)
+			commit.transaction()
+		endselect
+	endselect
+}
+
+
+
+
+function insert.into.tpisg241(	domain	tccprj		cprj241,
+				domain	tcorno		pcod241,
+				domain	tcmcs.str30	cact241,
+				domain	tcmcs.str30	pact241)
+{
+	domain	tccprj		old.cprj
+	domain	tcorno		old.pcod
+	domain	tcmcs.str30	old.cact, old.pact, old.sact
+	domain	tppss.rsty	old.rltp
+	domain	tcmcs.long	old.lelg
+	
+	select	tpisg221.*
+	from	tpisg221
+	where	tpisg221._index1 = {:cprj241,:pcod241,:cact241}
+	selectdo
+		select	tpisg241.*
+		from	tpisg241
+		where	tpisg241._index1 = {:cprj241,:pcod241,:cact241}
+		selectdo
+		selectempty
+			tpisg241.cprj = tpisg221.cprj 
+			tpisg241.pcod = tpisg221.pcod 
+			tpisg241.cact = tpisg221.cact 
+			tpisg241.pact = tpisg221.pact 
+			tpisg241.sact = tpisg221.sact 
+			tpisg241.rltp = tpisg221.rltp 
+			tpisg241.lelg = tpisg221.lelg
+			tpisg241.user = logname$
+			tpisg241.deld = utc.num()
+			db.insert(ttpisg241, db.skip.dupl, e)
+			commit.transaction()
+		endselect
+	endselect
+	
+| 	select	tpisg221.*
+| 	from	tpisg221
+| 	where	tpisg221._index1 = {:cprj241,:pcod241}
+| 	and	tpisg221.pact =:cact241
+| 	selectdo
+| 		select	tpisg241.*
+| 		from	tpisg241
+| 		where	tpisg241._index1 = {:cprj241,:pcod241}
+| 		and	tpisg241.pact =:cact241
+| 		selectdo
+| 		selectempty
+| 			tpisg241.cprj = tpisg221.cprj 
+| 			tpisg241.pcod = tpisg221.pcod 
+| 			tpisg241.cact = tpisg221.cact 
+| 			tpisg241.pact = tpisg221.pact 
+| 			tpisg241.sact = tpisg221.sact 
+| 			tpisg241.rltp = tpisg221.rltp 
+| 			tpisg241.lelg = tpisg221.lelg
+| 			tpisg241.user = logname$
+| 			tpisg241.deld = utc.num()
+| 			db.insert(ttpisg241, db.skip.dupl, e)
+| 		endselect
+| 	endselect
+}
+
+function delete.predecessors.activity(	domain	tccprj		del.cprj,
+					domain	tcorno		del.pcod,
+					domain	tcmcs.str30	del.cact,
+					domain	tcmcs.str30	del.pact,
+					domain	tcmcs.s200u	del.iref,
+					domain	tcorno		del.acty)		|#Atul.14.11.2018.n
+{
+	pact.len = len(trim$(del.cact))
+	
+	if trim$(del.acty) = "PARENT" then						|#Atul.14.11.2018.n	
+		select	tpisg220.*
+		from	tpisg220   for update
+		where	tpisg220._index1 = {:del.cprj}
+		and	tpisg220.sub1 = :del.iref
+		selectdo
+			var.cact = tpisg220.cact(1;pact.len)
+			if trim$(del.cact) = trim$(var.cact) then
+				select	tpisg221.*
+				from	tpisg221 for update
+				where	tpisg221._index1 = {:t.cprj,:t.pcod,:tpisg220.cact}
+				or	(tpisg221._index1 = {:t.cprj,:t.pcod}
+				and	tpisg221.pact =:tpisg220.cact)
+				selectdo
+					db.delete(ttpisg221,db.retry,e)
+				endselect
+				
+				db.delete(ttpisg220,db.retry,e)
+				commit.transaction()
+			endif
+		endselect
+	else										|#Atul.14.11.2018.sn
+		select	tpisg220.*
+		from	tpisg220   for update
+		where	tpisg220._index1 = {:del.cprj,:del.pcod,:del.cact}
+		selectdo	
+			select	tpisg221.*
+			from	tpisg221 for update
+			where	tpisg221._index1 = {:t.cprj,:t.pcod,:tpisg220.cact}
+			or	(tpisg221._index1 = {:t.cprj,:t.pcod}
+			and	tpisg221.pact =:tpisg220.cact)
+			selectdo
+				db.delete(ttpisg221,db.retry,e)
+			endselect
+			
+			db.delete(ttpisg220,db.retry,e)
+			commit.transaction()
+		endselect
+	endif										|#Atul.14.11.2018.en
+}
+
+|************************************** END **************************************
